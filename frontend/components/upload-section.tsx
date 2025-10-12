@@ -1,15 +1,12 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Box, Card, CardContent, Typography, Chip, Snackbar, Alert, Grid, LinearProgress, Paper } from "@mui/material"
+import { Box, Card, CardContent, Typography, Snackbar, Alert, LinearProgress, Paper } from "@mui/material"
 import CloudUploadIcon from "@mui/icons-material/CloudUpload"
 import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile"
-import type { QRCode, QRCodeStatus } from "@/types"
 import { useQRContext } from "@/context/qr-context"
 import { QrCodeSection } from "./qrcode-section"
-import { getStatusColor } from "./utils/status"
 
 export default function UploadSection() {
 	const [uploadingFile, setUploadingFile] = useState<{
@@ -17,14 +14,14 @@ export default function UploadSection() {
 		progress: number
 		status: "uploading" | "processing" | "complete"
 	} | null>(null)
-	const [processingQRCodes, setProcessingQRCodes] = useState<QRCode[]>([])
-	const [qrProcessingProgress, setQrProcessingProgress] = useState<Record<string, number>>({})
 	const [showSnackbar, setShowSnackbar] = useState(false)
+	const [snackbarMessage, setSnackbarMessage] = useState("Processing complete")
+	const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning">("success")
 	const [isDragging, setIsDragging] = useState(false)
 	const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
-	const { clearCurrentSession, addQRCodes, getCurrentSessionQRCodes } = useQRContext();
-	const [currentFileName, setCurrentFileName] = useState<string | null>(null);
-	const fetchedFilesRef = useRef<Set<string>>(new Set());
+	const { clearCurrentSession, addQRCodes } = useQRContext()
+	const [currentFileName, setCurrentFileName] = useState<string | null>(null)
+	const fetchedFilesRef = useRef<Set<string>>(new Set())
 
 	const doUpload = async (file: File) => {
 		const url = `${apiBase}/api/pdf/upload`
@@ -55,7 +52,6 @@ export default function UploadSection() {
 	const fetchResults = useCallback(async (fileName: string) => {
 		// Prevent duplicate fetches for the same file
 		if (fetchedFilesRef.current.has(fileName)) {
-			console.log(`Results for ${fileName} already fetched, skipping...`);
 			return;
 		}
 
@@ -63,18 +59,31 @@ export default function UploadSection() {
 		
 		try {
 			const res = await fetch(`${apiBase}/api/pdf/results?fileName=${encodeURIComponent(fileName)}`);
+			
+			if (!res.ok) {
+				throw new Error(`Failed to fetch results: ${res.status}`);
+			}
+			
 			const data = await res.json();
 
 			if (Array.isArray(data) && data.length > 0) {
 				addQRCodes(data);
-				setUploadingFile((prev) => (prev ? { ...prev, status: 'complete', progress: 100 } : prev));
-				setShowSnackbar(true);
+				setSnackbarMessage(`Processing complete! Found ${data.length} QR code${data.length > 1 ? 's' : ''}`);
+				setSnackbarSeverity("success");
 			} else {
-				console.warn("No QR codes found in results");
+				// No QR codes found
 				addQRCodes([]);
+				setSnackbarMessage("No QR codes detected in this PDF");
+				setSnackbarSeverity("info");
 			}
+			
+			setUploadingFile((prev) => (prev ? { ...prev, status: 'complete', progress: 100 } : prev));
+			setShowSnackbar(true);
 		} catch (err) {
 			console.error("Error fetching results:", err);
+			setSnackbarMessage("Error fetching results. Please try again.");
+			setSnackbarSeverity("warning");
+			setShowSnackbar(true);
 			// Remove from set on error so it can be retried
 			fetchedFilesRef.current.delete(fileName);
 		}
@@ -128,30 +137,17 @@ export default function UploadSection() {
 
 	const handleFileUpload = useCallback((file: File) => {
 		// Reset all previous data and clear the fetched files tracking
-		fetchedFilesRef.current.clear();
+		fetchedFilesRef.current.clear()
 		setUploadingFile({
 			file,
 			progress: 0,
 			status: "uploading",
 		})
 		setCurrentFileName(null)
-		clearCurrentSession();
-		setQrProcessingProgress({})
+		clearCurrentSession()
 		// start real upload
 		doUpload(file)
 	}, [clearCurrentSession, doUpload])
-
-	useEffect(() => {
-		if (uploadingFile?.status === 'complete') {
-			const timer = setTimeout(() => {
-				// setUploadingFile(null);
-				// setCurrentFileName(null);
-				setProcessingQRCodes([]);
-				setQrProcessingProgress({});
-			}, 5000);
-			return () => clearTimeout(timer);
-		}
-	}, [uploadingFile]);
 
 	const handleDrop = useCallback(
 		(e: React.DragEvent) => {
@@ -307,22 +303,22 @@ export default function UploadSection() {
 
 			<Snackbar
 				open={showSnackbar}
-				autoHideDuration={2000}
+				autoHideDuration={3000}
 				onClose={() => setShowSnackbar(false)}
 				anchorOrigin={{ vertical: "bottom", horizontal: "right" }}
 			>
 				<Alert
-					severity="success"
+					severity={snackbarSeverity}
 					sx={{
 						width: "100%",
-						bgcolor: "#D1FAE5",
-						color: "#065F46",
-						"& .MuiAlert-icon": { color: "#065F46" },
+						bgcolor: snackbarSeverity === "success" ? "#D1FAE5" : snackbarSeverity === "info" ? "#DBEAFE" : "#FEF3C7",
+						color: snackbarSeverity === "success" ? "#065F46" : snackbarSeverity === "info" ? "#1E40AF" : "#92400E",
+						"& .MuiAlert-icon": { color: snackbarSeverity === "success" ? "#065F46" : snackbarSeverity === "info" ? "#1E40AF" : "#92400E" },
 						borderRadius: 2,
 						boxShadow: "0 4px 12px rgba(0,0,0,0.1)",
 					}}
 				>
-					Processing complete
+					{snackbarMessage}
 				</Alert>
 			</Snackbar>
 		</Box>

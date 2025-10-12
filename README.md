@@ -63,31 +63,44 @@ No signup needed. Just upload and go!
 
 **1. Create environment file**
 
-```bash
-cat > .env << 'EOF'
-MONGO_URI=mongodb://host.docker.internal:27017/scan-craft
-PORT=3000
-NODE_ENV=production
-ENABLE_CORS=http://localhost:3001
-NEXT_PUBLIC_API_URL=http://localhost:3000
-EOF
-```
-
-**2. Start MongoDB**
+Copy the example environment file:
 
 ```bash
-docker run -d -p 27017:27017 --name mongodb mongo:7-alpine
+cp .env-example .env
 ```
 
-**3. Start the app**
+The `.env` file contains all necessary configuration:
+
+```env
+# CORS Configuration
+ENABLE_CORS=http://localhost
+
+# Frontend API Configuration
+NEXT_PUBLIC_API_URL=http://localhost:3001
+
+# MongoDB Connection (for Backend)
+MONGO_URI=mongodb://admin:admin123@mongodb:27017/scancraft?authSource=admin
+
+# MongoDB Initialization (for Docker)
+MONGO_INITDB_ROOT_USERNAME=admin
+MONGO_INITDB_ROOT_PASSWORD=admin123
+MONGO_INITDB_DATABASE=scancraft
+```
+
+**2. Start the app (includes MongoDB)**
 
 ```bash
 docker-compose up --build
 ```
 
-**4. Open in browser**
+This will start:
+- **MongoDB** database on port 27017 (with persistent data storage)
+- **Backend** (NestJS) on port 3001
+- **Frontend** (Next.js) on port 80
 
-http://localhost:3001
+**3. Open in browser**
+
+http://localhost
 
 That's it! 🎉
 
@@ -95,7 +108,11 @@ That's it! 🎉
 
 ```bash
 docker-compose down
-docker stop mongodb  # if you started MongoDB separately
+```
+
+To stop and remove all data (including database):
+```bash
+docker-compose down -v
 ```
 
 ---
@@ -123,16 +140,31 @@ docker stop mongodb  # if you started MongoDB separately
 
 ### Environment Variables
 
-You need these in your `.env` file:
+All configuration is managed through the `.env` file in the root directory:
 
-| Variable | What it does | Example |
-|----------|-------------|---------|
-| `MONGO_URI` | Database connection | `mongodb://localhost:27017/scan-craft` |
-| `PORT` | Backend port | `3000` |
-| `ENABLE_CORS` | Frontend URL | `http://localhost:3001` |
-| `NEXT_PUBLIC_API_URL` | Backend URL for frontend | `http://localhost:3000` |
+#### Frontend Variables
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `NEXT_PUBLIC_API_URL` | Backend API URL (must start with `NEXT_PUBLIC_`) | `http://localhost:3001` |
 
-⚠️ **Important**: Frontend variables must start with `NEXT_PUBLIC_`
+#### Backend Variables
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `ENABLE_CORS` | Allowed CORS origin | `http://localhost` |
+| `MONGO_URI` | MongoDB connection string | `mongodb://admin:admin123@mongodb:27017/scancraft?authSource=admin` |
+
+#### MongoDB Variables (Docker Initialization)
+| Variable | Description | Default Value |
+|----------|-------------|---------------|
+| `MONGO_INITDB_ROOT_USERNAME` | MongoDB admin username | `admin` |
+| `MONGO_INITDB_ROOT_PASSWORD` | MongoDB admin password | `admin123` |
+| `MONGO_INITDB_DATABASE` | Initial database name | `scancraft` |
+
+⚠️ **Important Notes**: 
+- Frontend variables **must** start with `NEXT_PUBLIC_` to be accessible in the browser
+- The `mongodb` in `MONGO_URI` refers to the Docker container service name
+- **Change default credentials in production!**
+- MongoDB credentials must match between `MONGO_URI` and `MONGO_INITDB_*` variables
 
 ---
 
@@ -140,15 +172,21 @@ You need these in your `.env` file:
 
 ```bash
 # Using Makefile
-make up        # Start everything
-make down      # Stop everything
-make logs      # See what's happening
-make rebuild   # Start fresh
+make up         # Start everything
+make down       # Stop everything
+make restart    # Restart all services
+make logs       # See what's happening
+make status     # Check container status
+make clean      # Stop and remove all data
+make rebuild    # Complete rebuild (no cache)
+make db-reset   # Reset only the database
 
 # Using Docker Compose directly
-docker-compose up --build    # Start
-docker-compose down          # Stop
-docker-compose logs -f       # View logs
+docker-compose up --build     # Start
+docker-compose down           # Stop
+docker-compose logs -f        # View logs
+docker-compose ps             # Check status
+docker-compose restart        # Restart services
 ```
 
 ---
@@ -176,39 +214,12 @@ docker-compose logs -f       # View logs
 
 ---
 
-## Troubleshooting
-
-**Frontend shows "undefined" for API?**
-```bash
-# Make sure .env has NEXT_PUBLIC_API_URL
-# Rebuild the frontend
-docker-compose build --no-cache frontend
-docker-compose up -d
-```
-
-**Can't connect to MongoDB?**
-```bash
-# Check if MongoDB is running
-docker ps | grep mongo
-
-# Start MongoDB if needed
-docker run -d -p 27017:27017 --name mongodb mongo:7-alpine
-```
-
-**Port already in use?**
-```bash
-# Find what's using the port
-lsof -i :3000
-lsof -i :3001
-
-# Change ports in .env file
-```
 
 ---
 
 ## API Documentation
 
-Once running, visit: **http://localhost:3000/api/swagger**
+Once running, visit: **http://localhost:3001/api**
 
 ### Main Endpoints
 

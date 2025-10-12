@@ -157,10 +157,8 @@ export class PdfService {
   async getResultsByFileName(fileName: string): Promise<QrResult[]> {
     console.log('Fetching results for file:', fileName);
     const res = await this.qrModel.find({ fileName }).exec();
-    if (!res || res.length === 0) {
-      throw new NotFoundException('No results found for this file');
-    }
-    return res;
+    // Return empty array instead of throwing error when no results found
+    return res || [];
   }
 
   /** Update progress and emit SSE event */
