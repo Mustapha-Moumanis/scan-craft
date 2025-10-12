@@ -8,6 +8,8 @@ import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile"
 import { useQRContext } from "@/context/qr-context"
 import { QrCodeSection } from "./qrcode-section"
 
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+
 export default function UploadSection() {
 	const [uploadingFile, setUploadingFile] = useState<{
 		file: File
@@ -18,13 +20,12 @@ export default function UploadSection() {
 	const [snackbarMessage, setSnackbarMessage] = useState("Processing complete")
 	const [snackbarSeverity, setSnackbarSeverity] = useState<"success" | "info" | "warning">("success")
 	const [isDragging, setIsDragging] = useState(false)
-	const apiBase = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
 	const { clearCurrentSession, addQRCodes } = useQRContext()
 	const [currentFileName, setCurrentFileName] = useState<string | null>(null)
 	const fetchedFilesRef = useRef<Set<string>>(new Set())
 
-	const doUpload = async (file: File) => {
-		const url = `${apiBase}/api/pdf/upload`
+	const doUpload = useCallback(async (file: File) => {
+		const url = `${API_BASE_URL}/api/pdf/upload`
 		const form = new FormData()
 		form.append('file', file)
 
@@ -39,60 +40,59 @@ export default function UploadSection() {
 			}
 
 			const json = await response.json()
-
-			// Store the filename for filtering progress and results
 			setCurrentFileName(json.fileName)
-
 		} catch (err) {
 			console.error('Upload error', err)
+			setSnackbarMessage("Upload failed. Please try again.")
+			setSnackbarSeverity("warning")
+			setShowSnackbar(true)
 			setUploadingFile((prev) => (prev ? { ...prev, status: 'complete' } : prev))
 		}
-	}
+	}, [])
 
 	const fetchResults = useCallback(async (fileName: string) => {
 		// Prevent duplicate fetches for the same file
 		if (fetchedFilesRef.current.has(fileName)) {
-			return;
+			return
 		}
 
-		fetchedFilesRef.current.add(fileName);
+		fetchedFilesRef.current.add(fileName)
 		
 		try {
-			const res = await fetch(`${apiBase}/api/pdf/results?fileName=${encodeURIComponent(fileName)}`);
+			const res = await fetch(`${API_BASE_URL}/api/pdf/results?fileName=${encodeURIComponent(fileName)}`)
 			
 			if (!res.ok) {
-				throw new Error(`Failed to fetch results: ${res.status}`);
+				throw new Error(`Failed to fetch results: ${res.status}`)
 			}
 			
-			const data = await res.json();
+			const data = await res.json()
 
 			if (Array.isArray(data) && data.length > 0) {
-				addQRCodes(data);
-				setSnackbarMessage(`Processing complete! Found ${data.length} QR code${data.length > 1 ? 's' : ''}`);
-				setSnackbarSeverity("success");
+				addQRCodes(data)
+				setSnackbarMessage(`Processing complete! Found ${data.length} QR code${data.length > 1 ? 's' : ''}`)
+				setSnackbarSeverity("success")
 			} else {
-				// No QR codes found
-				addQRCodes([]);
-				setSnackbarMessage("No QR codes detected in this PDF");
-				setSnackbarSeverity("info");
+				addQRCodes([])
+				setSnackbarMessage("No QR codes detected in this PDF")
+				setSnackbarSeverity("info")
 			}
 			
-			setUploadingFile((prev) => (prev ? { ...prev, status: 'complete', progress: 100 } : prev));
-			setShowSnackbar(true);
+			setUploadingFile((prev) => (prev ? { ...prev, status: 'complete', progress: 100 } : prev))
+			setShowSnackbar(true)
 		} catch (err) {
-			console.error("Error fetching results:", err);
-			setSnackbarMessage("Error fetching results. Please try again.");
-			setSnackbarSeverity("warning");
-			setShowSnackbar(true);
-			// Remove from set on error so it can be retried
-			fetchedFilesRef.current.delete(fileName);
+			console.error("Error fetching results:", err)
+			setSnackbarMessage("Error fetching results. Please try again.")
+			setSnackbarSeverity("warning")
+			setShowSnackbar(true)
+			fetchedFilesRef.current.delete(fileName)
 		}
-	}, [apiBase, addQRCodes]);
+	}, [addQRCodes])
 
+	// SSE for progress tracking
 	useEffect(() => {
 		if (!currentFileName) return
 
-		const sseUrl = `${apiBase}/api/pdf/progress?fileName=${encodeURIComponent(currentFileName)}`
+		const sseUrl = `${API_BASE_URL}/api/pdf/progress?fileName=${encodeURIComponent(currentFileName)}`
 		const es = new EventSource(sseUrl)
 		let isDone = false
 
@@ -115,7 +115,7 @@ export default function UploadSection() {
 						: prev
 				)
 
-				// When done, fetch results for this specific file (only once)
+				// When done, fetch results
 				if (status === 'done' && !isDone) {
 					isDone = true
 					setTimeout(() => fetchResults(fileName), 500)
@@ -133,10 +133,10 @@ export default function UploadSection() {
 		return () => {
 			es.close()
 		}
-	}, [currentFileName, fetchResults, apiBase])
+	}, [currentFileName, fetchResults])
 
 	const handleFileUpload = useCallback((file: File) => {
-		// Reset all previous data and clear the fetched files tracking
+		// Reset all previous data
 		fetchedFilesRef.current.clear()
 		setUploadingFile({
 			file,
@@ -145,7 +145,7 @@ export default function UploadSection() {
 		})
 		setCurrentFileName(null)
 		clearCurrentSession()
-		// start real upload
+		// Start upload
 		doUpload(file)
 	}, [clearCurrentSession, doUpload])
 

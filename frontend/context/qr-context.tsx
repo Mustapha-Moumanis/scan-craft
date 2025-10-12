@@ -16,7 +16,8 @@ export function QRProvider({ children }: { children: ReactNode }) {
   const [allQRCodes, setAllQRCodes] = useState<QRCode[] | null>(null)
 
   const addQRCodes = (newQRCodes: QRCode[]) => {
-    setAllQRCodes((prev) => (prev ? [...newQRCodes, ...prev] : newQRCodes))
+    // Replace QR codes instead of appending
+    setAllQRCodes(newQRCodes)
   }
 
   const getCurrentSessionQRCodes = () => {
