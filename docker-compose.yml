@@ -2,8 +2,6 @@ services:
   mongodb:
     image: mongo:7.0
     container_name: scan-craft-mongodb
-    ports:
-      - "27017:27017"
     env_file:
       - .env
     volumes:
@@ -11,12 +9,12 @@ services:
     networks:
       - scan-craft-network
     restart: unless-stopped
+    expose:
+      - "27017"
 
   backend:
     build: ./backend
     container_name: scan-craft-backend
-    ports:
-      - "3001:3001"
     env_file:
       - .env
     depends_on:
@@ -24,12 +22,12 @@ services:
     networks:
       - scan-craft-network
     restart: unless-stopped
+    expose:
+      - "3001"
 
   frontend:
     build: ./frontend
     container_name: scan-craft-frontend
-    ports:
-      - "80:3000"
     env_file:
       - .env
     depends_on:
@@ -37,9 +35,53 @@ services:
     networks:
       - scan-craft-network
     restart: unless-stopped
+    expose:
+      - "3000"
+
+  nginx:
+    build:
+      context: ./nginx
+      args:
+        BUILD_ENV: production
+        DOMAIN: scan-craft.mustapha-moumanis.me
+    container_name: scan-craft-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=scan-craft.mustapha-moumanis.me
+      - SSL_EMAIL=${SSL_EMAIL:-}
+    volumes:
+      # Don't mount nginx/ssl - use built-in certificates from Docker image
+      # Let's Encrypt certs will be stored in certbot_data volume
+      - certbot_data:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    depends_on:
+      - frontend
+      - backend
+    networks:
+      - scan-craft-network
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: scan-craft-certbot
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+      - ./nginx/ssl:/app/ssl
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot; sleep 12h & wait $${!}; done;'"
+    networks:
+      - scan-craft-network
 
 volumes:
   mongodb_data:
+    driver: local
+  certbot_conf:
+    driver: local
+  certbot_data:
+    driver: local
+  certbot_www:
     driver: local
 
 networks:

@@ -8,8 +8,11 @@ import { swaggerConfig } from './config/swagger.config';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // Enable CORS with support for multiple origins
+  const corsOrigins = process.env.ENABLE_CORS?.split(',').map(origin => origin.trim()) || ['http://localhost'];
+  
   app.enableCors({
-		origin: process.env.ENABLE_CORS,
+		origin: corsOrigins,
 		credentials: true,
 		methods: 'GET,POST,PUT,PATCH,DELETE',
 		allowedHeaders: 'Content-Type, Authorization, Cookie, withCredentials',

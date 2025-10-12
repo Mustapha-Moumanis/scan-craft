@@ -1,1 +1,6 @@
 .env
+
+# SSL certificates (auto-generated)
+nginx/ssl/*.pem
+nginx/ssl/*.key
+nginx/ssl/*.crt

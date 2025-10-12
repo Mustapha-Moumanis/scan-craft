@@ -1,4 +1,4 @@
-.PHONY: build up down restart logs clean rebuild status db-reset
+.PHONY: build up down restart logs clean rebuild status db-reset ssl-setup ssl-renew
 
 all: build up
 
@@ -32,3 +32,12 @@ db-reset:
 	docker-compose stop mongodb
 	docker volume rm new-repo-scan-craft_mongodb_data || true
 	docker-compose up -d mongodb
+
+# SSL/Certificate commands
+ssl-setup:
+	./setup-ssl.sh
+
+ssl-renew:
+	docker-compose run --rm certbot renew
+	docker-compose restart nginx
+

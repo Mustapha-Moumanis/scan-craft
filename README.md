@@ -87,22 +87,32 @@ MONGO_INITDB_ROOT_PASSWORD=admin123
 MONGO_INITDB_DATABASE=scancraft
 ```
 
-**2. Start the app (includes MongoDB)**
+**2. Start the app**
 
 ```bash
 docker-compose up --build
 ```
 
 This will start:
-- **MongoDB** database on port 27017 (with persistent data storage)
-- **Backend** (NestJS) on port 3001
-- **Frontend** (Next.js) on port 80
+- **MongoDB** database (with persistent data storage)
+- **Backend** (NestJS)
+- **Frontend** (Next.js)
+- **Nginx** reverse proxy with **automatic SSL setup**
+
+**What happens automatically:**
+- ✅ Nginx builds with temporary certificates
+- ✅ On first start, attempts to get Let's Encrypt certificates
+- ✅ Falls back to self-signed if domain not configured
+- ✅ Auto-renews certificates every 12 hours
 
 **3. Open in browser**
 
-http://localhost
+🔒 **HTTPS (Recommended):** https://localhost or https://your-domain.com  
+🌐 **HTTP:** http://localhost (redirects to HTTPS)
 
-That's it! 🎉
+⚠️ **Note**: For localhost, you'll see a browser warning for self-signed certificates. Click "Advanced" → "Proceed to localhost" to continue.
+
+That's it! 🎉 **One command deployment with automatic SSL!**
 
 ### Stop the app
 
@@ -132,7 +142,9 @@ docker-compose down -v
 
 **Infrastructure:**
 - Docker (containers)
+- Nginx (reverse proxy with SSL/TLS)
 - Server-Sent Events (real-time updates)
+- Self-signed SSL certificates (auto-generated)
 
 ---
 
@@ -166,20 +178,139 @@ All configuration is managed through the `.env` file in the root directory:
 - **Change default credentials in production!**
 - MongoDB credentials must match between `MONGO_URI` and `MONGO_INITDB_*` variables
 
+### SSL/HTTPS Configuration
+
+The application uses Nginx with **automatic SSL certificate management**.
+
+#### 🚀 One-Command Deployment
+
+Simply run:
+
+```bash
+docker-compose up --build
+```
+
+**What happens automatically:**
+
+1. **Build Time**: Creates temporary certificates
+2. **First Start**: Attempts to obtain Let's Encrypt certificates
+   - If domain is configured and accessible → Gets valid certificates ✅
+   - If localhost or domain not ready → Uses self-signed certificates
+3. **Runtime**: Auto-renews certificates every 12 hours
+
+#### Configuration
+
+**Development (localhost):**
+```bash
+# No configuration needed - just run:
+docker-compose up --build
+```
+- Uses self-signed certificates automatically
+- Browser warnings are normal
+
+**Production (with domain):**
+
+1. **Set your email in `.env`:**
+   ```env
+   SSL_EMAIL=your-email@example.com
+   ```
+
+2. **Ensure DNS is configured:**
+   - Domain points to your server IP
+   - Ports 80 and 443 are accessible
+
+3. **Deploy:**
+   ```bash
+   docker-compose up --build
+   ```
+   
+4. **Done!** Let's Encrypt certificates are obtained automatically
+
+#### Manual SSL Setup (Optional)
+
+For production with a real domain:
+
+**Prerequisites:**
+- Domain name pointing to your server
+- Ports 80 and 443 accessible from internet
+- No other service using these ports
+
+**Automated Setup:**
+```bash
+./setup-ssl.sh
+# Choose option 2 and follow prompts
+```
+
+**Manual Setup:**
+```bash
+# 1. Start nginx and certbot
+docker-compose up -d nginx certbot
+
+# 2. Obtain certificate
+docker-compose run --rm certbot certonly \
+  --webroot \
+  --webroot-path=/var/www/certbot \
+  --email your-email@example.com \
+  --agree-tos \
+  -d your-domain.com
+
+# 3. Copy certificates
+docker run --rm \
+  -v scan-craft_certbot_conf:/etc/letsencrypt \
+  -v $(pwd)/nginx/ssl:/app/ssl \
+  alpine \
+  sh -c "cp /etc/letsencrypt/live/your-domain.com/fullchain.pem /app/ssl/cert.pem && \
+         cp /etc/letsencrypt/live/your-domain.com/privkey.pem /app/ssl/key.pem"
+
+# 4. Restart nginx
+docker-compose restart nginx
+```
+
+**Auto-Renewal:**
+The certbot container automatically renews certificates:
+- Checks twice daily
+- Renews when certificate is within 30 days of expiry
+- No manual intervention needed
+
+**Manual Renewal (if needed):**
+```bash
+docker-compose run --rm certbot renew
+docker-compose restart nginx
+```
+
+#### Nginx Features
+
+- 🔒 **HTTPS**: TLS 1.2/1.3 encryption
+- 🔄 **Auto-redirect**: HTTP → HTTPS
+- 🛡️ **Security headers**: HSTS, X-Frame-Options, CSP
+- ⚡ **Rate limiting**: 10 req/sec per IP
+- 📦 **Gzip compression**: Faster page loads
+- 📊 **SSE support**: Real-time progress updates
+- 📁 **Large uploads**: 100MB file limit
+- 🔐 **Let's Encrypt ready**: Valid SSL certificates
+
+For detailed SSL documentation, see [`nginx/README.md`](nginx/README.md)
+
 ---
 
 ## Useful Commands
 
 ```bash
-# Using Makefile
-make up         # Start everything
-make down       # Stop everything
-make restart    # Restart all services
-make logs       # See what's happening
-make status     # Check container status
-make clean      # Stop and remove all data
-make rebuild    # Complete rebuild (no cache)
-make db-reset   # Reset only the database
+# Using Makefile - General
+make up              # Start everything
+make down            # Stop everything
+make restart         # Restart all services
+make logs            # See what's happening
+make status          # Check container status
+make clean           # Stop and remove all data
+make rebuild         # Complete rebuild (no cache)
+
+# Database
+make db-reset        # Reset only the database
+
+# SSL/Certificates
+make ssl-setup       # Interactive SSL setup (for Let's Encrypt)
+make ssl-renew       # Renew Let's Encrypt certificates
 
 # Using Docker Compose directly
 docker-compose up --build     # Start

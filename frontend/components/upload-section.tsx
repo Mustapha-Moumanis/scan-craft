@@ -8,7 +8,7 @@ import InsertDriveFileIcon from "@mui/icons-material/InsertDriveFile"
 import { useQRContext } from "@/context/qr-context"
 import { QrCodeSection } from "./qrcode-section"
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001"
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://localhost"
 
 export default function UploadSection() {
 	const [uploadingFile, setUploadingFile] = useState<{
