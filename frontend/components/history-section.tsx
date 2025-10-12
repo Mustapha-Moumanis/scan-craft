@@ -35,6 +35,7 @@ export default function HistorySection() {
   // Fetch files from /history endpoint
   useEffect(() => {
     fetchFiles()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const fetchFiles = async () => {
