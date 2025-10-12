@@ -1,0 +1,26 @@
+services:
+  backend:
+    build: ./backend
+    container_name: scan-craft-backend
+    ports:
+      - "3001:3001"
+    env_file:
+      - .env
+    networks:
+      - scan-craft-network
+
+  frontend:
+    build: ./frontend
+    container_name: scan-craft-frontend
+    ports:
+      - "80:3000"
+    env_file:
+      - .env
+    depends_on:
+      - backend
+    networks:
+      - scan-craft-network
+
+networks:
+  scan-craft-network:
+    driver: bridge
