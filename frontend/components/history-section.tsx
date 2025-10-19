@@ -29,7 +29,7 @@ export default function HistorySection() {
   const [loadingResults, setLoadingResults] = useState(false)
   const [filter, setFilter] = useState<"ALL" | "VALID" | "INVALID" | "DUPLICATE" | "UNREADABLE">("ALL")
   const [currentPage, setCurrentPage] = useState(1)
-  const apiBase = process.env.NEXT_PUBLIC_API_URL || "https://localhost"
+  const apiBase = process.env.NEXT_PUBLIC_API_URL || "https://scan-craft.mustapha-moumanis.me"
   const pageSize = 8
 
   // Fetch files from /history endpoint

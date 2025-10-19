@@ -52,9 +52,8 @@ services:
       - DOMAIN=scan-craft.mustapha-moumanis.me
       - SSL_EMAIL=${SSL_EMAIL:-}
     volumes:
-      # Don't mount nginx/ssl - use built-in certificates from Docker image
-      # Let's Encrypt certs will be stored in certbot_data volume
-      - certbot_data:/etc/letsencrypt
+      # Use same volume as certbot for Let's Encrypt certificates
+      - certbot_conf:/etc/letsencrypt
       - certbot_www:/var/www/certbot
     depends_on:
       - frontend
@@ -78,9 +77,8 @@ volumes:
   mongodb_data:
     driver: local
   certbot_conf:
-    driver: local
-  certbot_data:
-    driver: local
+    external: true
+    name: scan-craft_certbot_conf
   certbot_www:
     driver: local
 

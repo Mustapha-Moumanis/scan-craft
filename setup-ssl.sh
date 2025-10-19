@@ -29,7 +29,7 @@ case $choice in
         echo ""
         echo "Next steps:"
         echo "  1. Start the application:"
-        echo "     docker-compose up --build"
+        echo "     docker compose up --build"
         echo ""
         echo "  2. Access your app:"
         echo "     https://localhost"
@@ -76,7 +76,7 @@ case $choice in
         
         # Start nginx and certbot containers
         echo "📦 Starting nginx and certbot services..."
-        docker-compose up -d nginx certbot
+        docker compose up -d nginx certbot
         
         # Wait for nginx to be ready
         echo "⏳ Waiting for nginx to start..."
@@ -86,7 +86,7 @@ case $choice in
         echo "🔐 Obtaining SSL certificate from Let's Encrypt..."
         
         if [ -n "$email" ]; then
-            docker-compose run --rm certbot certonly \
+            docker compose run --rm certbot certonly \
                 --webroot \
                 --webroot-path=/var/www/certbot \
                 --email $email \
@@ -94,7 +94,7 @@ case $choice in
                 --no-eff-email \
                 -d $domain
         else
-            docker-compose run --rm certbot certonly \
+            docker compose run --rm certbot certonly \
                 --webroot \
                 --webroot-path=/var/www/certbot \
                 --register-unsafely-without-email \
@@ -107,7 +107,7 @@ case $choice in
             echo "✅ Certificate obtained successfully!"
             echo ""
             echo "🔄 Restarting nginx to use new certificates..."
-            docker-compose restart nginx
+            docker compose restart nginx
             
             echo ""
             echo "✅ Setup complete!"
@@ -120,8 +120,8 @@ case $choice in
             echo "   It checks twice daily and renews when needed"
             echo ""
             echo "📊 Manual renewal (if needed):"
-            echo "   docker-compose run --rm certbot renew"
-            echo "   docker-compose restart nginx"
+            echo "   docker compose run --rm certbot renew"
+            echo "   docker compose restart nginx"
             echo ""
         else
             echo ""
@@ -145,4 +145,5 @@ case $choice in
         exit 1
         ;;
 esac
+
 

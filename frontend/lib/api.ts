@@ -1,4 +1,4 @@
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost/api/";
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "https://scan-craft.mustapha-moumanis.me/api/";
 
 export interface QRCode {
   _id: string;
