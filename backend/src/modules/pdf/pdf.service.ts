@@ -8,6 +8,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { Model } from 'mongoose';
 import { QrResult } from './entities/qr-result.entity';
+import { ProcessedFile, QrCode } from './entities/processed-file.entity';
 import { extractImages, getDocumentProxy } from 'unpdf';
 import sharp from 'sharp';
 import jsQR from 'jsqr';
@@ -22,6 +23,7 @@ export class PdfService {
 
   constructor(
     @InjectModel(QrResult.name) private readonly qrModel: Model<QrResult>,
+    @InjectModel(ProcessedFile.name) private readonly processedFileModel: Model<ProcessedFile>,
     private readonly eventEmitter: EventEmitter2,
   ) {}
 
@@ -43,7 +45,7 @@ export class PdfService {
       );
 
       const seenQrs = new Set<string>();
-      const allResults: QrResult[] = [];
+      const allQrCodes: QrCode[] = [];
 
       for (let pageNumber = 1; pageNumber <= totalPages; pageNumber++) {
         const pageResults = await this.processPage(
@@ -53,7 +55,7 @@ export class PdfService {
           totalPages,
           seenQrs,
         );
-        allResults.push(...pageResults);
+        allQrCodes.push(...pageResults);
 
         // Update progress after each page
         const progress = Math.round((pageNumber / totalPages) * 100);
@@ -65,6 +67,50 @@ export class PdfService {
         );
       }
 
+      // Only save if we found at least one QR code image
+      if (allQrCodes.length === 0) {
+        this.logger.log(`📄 No QR code images found in "${fileName}". Skipping save.`);
+        
+        // Cleanup memory
+        seenQrs.clear();
+        
+        // Mark as complete
+        this.updateProgress(
+          fileName,
+          100,
+          'done',
+          'Finished processing. No QR codes found',
+        );
+        
+        // Clean up progress tracking after a delay
+        setTimeout(() => {
+          this.processingFiles.delete(fileName);
+        }, 5000);
+        
+        return null;
+      }
+
+      // Calculate counts
+      const validCount = allQrCodes.filter(qr => qr.status === 'VALID').length;
+      const invalidCount = allQrCodes.filter(qr => qr.status === 'INVALID').length;
+      const unreadableCount = allQrCodes.filter(qr => qr.status === 'UNREADABLE').length;
+      const duplicateCount = allQrCodes.filter(qr => qr.status === 'DUPLICATE').length;
+
+      // Save all results in a single document (upsert)
+      const processedFile = await this.processedFileModel.findOneAndUpdate(
+        { fileName },
+        {
+          fileName,
+          qrCodes: allQrCodes,
+          validCount,
+          invalidCount,
+          unreadableCount,
+          duplicateCount,
+          totalCount: allQrCodes.length,
+        },
+        { upsert: true, new: true }
+      );
+
       // Cleanup memory
       seenQrs.clear();
 
@@ -73,11 +119,11 @@ export class PdfService {
         fileName,
         100,
         'done',
-        `Finished processing. Found ${allResults.length} QR codes`,
+        `Finished processing. Found ${allQrCodes.length} QR codes`,
       );
 
       this.logger.log(
-        `🎉 Finished processing PDF "${fileName}". Found ${allResults.length} QR code images`,
+        `🎉 Finished processing PDF "${fileName}". Found ${allQrCodes.length} QR code images`,
       );
 
       // Clean up progress tracking after a delay
@@ -85,7 +131,7 @@ export class PdfService {
         this.processingFiles.delete(fileName);
       }, 5000);
 
-      return allResults;
+      return processedFile;
     } catch (error) {
       this.logger.error('❌ PDF processing failed:', error);
       this.updateProgress(fileName, 0, 'error', 'Processing failed');
@@ -94,43 +140,22 @@ export class PdfService {
   }
 
   async getHistory() {
-    return await this.qrModel.aggregate([
-      {
-        $group: {
-          _id: '$fileName',
-          fileName: { $first: '$fileName' },
-          qrCount: { $sum: 1 },
-          processedAt: { $max: '$createdAt' },
-          validCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'VALID'] }, 1, 0] }
-          },
-          invalidCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'INVALID'] }, 1, 0] }
-          },
-          unreadableCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'UNREADABLE'] }, 1, 0] }
-          },
-          duplicateCount: {
-            $sum: { $cond: [{ $eq: ['$status', 'DUPLICATE'] }, 1, 0] }
-          }
-        }
-      },
-      {
-        $sort: { processedAt: -1 } // Sort by most recent first
-      },
-      {
-        $project: {
-          _id: 0,
-          fileName: 1,
-          qrCount: 1,
-          processedAt: 1,
-          validCount: 1,
-          invalidCount: 1,
-          unreadableCount: 1,
-          duplicateCount: 1
-        }
-      }
-    ]).exec();
+    // Simple query - much faster than aggregation!
+    return await this.processedFileModel
+      .find()
+      .select('fileName totalCount validCount invalidCount unreadableCount duplicateCount createdAt updatedAt')
+      .sort({ createdAt: -1 })
+      .lean()
+      .exec()
+      .then(files => files.map(file => ({
+        fileName: file.fileName,
+        qrCount: file.totalCount,
+        processedAt: file.createdAt,
+        validCount: file.validCount,
+        invalidCount: file.invalidCount,
+        unreadableCount: file.unreadableCount,
+        duplicateCount: file.duplicateCount,
+      })));
   }
 
   /** Get progress for a specific file */
@@ -154,11 +179,26 @@ export class PdfService {
     );
   }
 
-  async getResultsByFileName(fileName: string): Promise<QrResult[]> {
+  async getResultsByFileName(fileName: string) {
     console.log('Fetching results for file:', fileName);
-    const res = await this.qrModel.find({ fileName }).exec();
-    // Return empty array instead of throwing error when no results found
-    return res || [];
+    const processedFile = await this.processedFileModel
+      .findOne({ fileName })
+      .lean()
+      .exec();
+    
+    if (!processedFile) {
+      return {
+        fileName,
+        qrCodes: [],
+        validCount: 0,
+        invalidCount: 0,
+        unreadableCount: 0,
+        duplicateCount: 0,
+        totalCount: 0,
+      };
+    }
+    
+    return processedFile;
   }
 
   /** Update progress and emit SSE event */
@@ -180,19 +220,18 @@ export class PdfService {
     });
   }
 
-  /** Process a single page: extract images, decode QRs, save results */
+  /** Process a single page: extract images, decode QRs */
   private async processPage(
     pdf: any,
     fileName: string,
     pageNumber: number,
     totalPages: number,
     seenQrs: Set<string>,
-  ) {
+  ): Promise<QrCode[]> {
     const images = await extractImages(pdf, pageNumber);
     this.logger.log(`🖼️ Page ${pageNumber}: found ${images.length} image(s)`);
 
-    const pageResults: QrResult[] = [];
-	
+    const pageResults: QrCode[] = [];
 
     for (let i = 0; i < images.length; i++) {
       const imgData = images[i];
@@ -203,22 +242,20 @@ export class PdfService {
         seenQrs,
       );
 
-      // Check if processResult is not null and isQrCode is true
-      if (processResult && processResult.isQrCode) {
-        pageResults.push(processResult.result);
+      // Always save the result (valid, invalid, unreadable)
+      if (processResult) {
+        pageResults.push(processResult.qrCode);
 
-        // Emit an event for each QR code image result
-        this.eventEmitter.emit('qr.result.created', {
-          fileName,
-          pageNumber,
-          qrValue: processResult.result.qrValue,
-          status: processResult.result.status,
-          imageBase64: processResult.result.imageBase64,
-        });
-      } else {
-        this.logger.log(
-          `⏩ Skipped non-QR image on page ${pageNumber}, image ${i + 1}`,
-        );
+        // Emit an event for each QR code image result (only if it's a QR code)
+        if (processResult.isQrCode) {
+          this.eventEmitter.emit('qr.result.created', {
+            fileName,
+            pageNumber,
+            qrValue: processResult.qrCode.qrValue,
+            status: processResult.qrCode.status,
+            imageBase64: processResult.qrCode.imageBase64,
+          });
+        }
       }
     }
 
@@ -271,13 +308,13 @@ export class PdfService {
 //     }
 //   }
 
-  /** Convert image → detect if it's QR → decode QR → save result */
+  /** Convert image → detect if it's QR → decode QR */
   private async processImage(
 	imgData: any,
 	fileName: string,
 	pageNumber: number,
 	seenQrs: Set<string>,
-  ): Promise<{ result: QrResult; isQrCode: boolean }> {
+  ): Promise<{ qrCode: QrCode; isQrCode: boolean }> {
 	try {
 	  // Convert image to PNG buffer
 	  const pngBuffer = await this.convertToPng(imgData);
@@ -296,32 +333,27 @@ export class PdfService {
 		  : 'UNREADABLE';
 	  }
   
-	  // Always save result, even if invalid
-	  const qrResult = new this.qrModel({
-		fileName,
+	  // Return QR code data (don't save to DB yet)
+	  const qrCode: QrCode = {
 		pageNumber,
 		qrValue,
 		status,
 		imageBase64,
-	  });
+	  };
   
-	  await qrResult.save();
-  
-	  return { result: qrResult, isQrCode };
+	  return { qrCode, isQrCode };
 	} catch (error) {
 	  this.logger.error(`Error processing image on page ${pageNumber}:`, error);
   
-	  // Save an INVALID entry if processing fails
-	  const qrResult = new this.qrModel({
-		fileName,
+	  // Return INVALID entry if processing fails
+	  const qrCode: QrCode = {
 		pageNumber,
 		qrValue: null,
 		status: 'INVALID',
 		imageBase64: null,
-	  });
-	  await qrResult.save();
+	  };
   
-	  return { result: qrResult, isQrCode: false };
+	  return { qrCode, isQrCode: false };
 	}
   }
   
@@ -344,11 +376,11 @@ export class PdfService {
       // Simple detection: square aspect ratio and try to decode
       // If it's square and jsQR can attempt to read it (even if it fails), it's likely a QR
       if (isSquare) {
-        const qrCode = jsQR(new Uint8ClampedArray(data.buffer), info.width, info.height);
+        const qrCode = jsQR(new Uint8ClampedArray(data), info.width, info.height);
         // Even if decoding fails, if jsQR attempted to process it (found some patterns),
         // consider it a QR code
         return (
-          qrCode !== null || this.hasQrPatterns(new Uint8ClampedArray(data.buffer), info.width, info.height)
+          qrCode !== null || this.hasQrPatterns(new Uint8ClampedArray(data), info.width, info.height)
         );
       }
 
@@ -413,7 +445,7 @@ export class PdfService {
         .raw()
         .toBuffer({ resolveWithObject: true });
 
-      const qrCode = jsQR(data, info.width, info.height);
+      const qrCode = jsQR(new Uint8ClampedArray(data), info.width, info.height);
       return qrCode?.data
         ? qrCode.data.trim().toLowerCase().replace(/\s+/g, '')
         : null;

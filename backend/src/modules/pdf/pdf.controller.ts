@@ -121,7 +121,21 @@ export class PdfController {
     if (!fileName) {
       throw new BadRequestException('fileName query parameter is required');
     }
-    return await this.pdfService.getResultsByFileName(fileName);
+    const processedFile = await this.pdfService.getResultsByFileName(fileName);
+    
+    // Transform QR codes to match frontend expectations
+    const qrCodesWithMetadata = (processedFile.qrCodes || []).map((qr, index) => ({
+      _id: `${processedFile['_id'] || fileName}-${index}`, // Generate a unique ID
+      fileName: processedFile.fileName,
+      pageNumber: qr.pageNumber,
+      qrValue: qr.qrValue,
+      status: qr.status,
+      imageBase64: qr.imageBase64,
+      createdAt: processedFile['createdAt'] || new Date(),
+      updatedAt: processedFile['updatedAt'] || new Date(),
+    }));
+    
+    return qrCodesWithMetadata;
   }
 
   @Get('history')
